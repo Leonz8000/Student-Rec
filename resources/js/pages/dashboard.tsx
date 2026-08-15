@@ -54,6 +54,8 @@ export default function Dashboard() {
     }
     if (!formData.School_email.trim()) {
       newErrors.School_email = 'Email is required';
+    } else if (!isValidEmail(formData.School_email)) {
+      newErrors.School_email = 'Please enter a valid email address';
     }
     if (!formData.phone_number.trim()) {
       newErrors.phone_number = 'Phone number is required';
@@ -70,6 +72,17 @@ export default function Dashboard() {
 
     setErrors(newErrors);
     return Object.keys(newErrors).length === 0;
+  }
+
+  function isValidEmail(email: string): boolean {
+    // Email validation pattern - requires:
+    // - Characters before @
+    // - @ symbol
+    // - Domain name
+    // - A dot
+    // - At least 2 letters for domain extension (like .com, .co, .org, etc)
+    const emailRegex = /^[^\s@]+@[^\s@]+\.[a-zA-Z]{2,}$/;
+    return emailRegex.test(email);
   }
 
   function startEdit(student: StudentRecord) {
@@ -245,14 +258,20 @@ export default function Dashboard() {
               <label htmlFor="phone_number">Phone Number</label>
               <Input
                 id="phone_number"
+                type="tel"
+                inputMode="numeric"
                 placeholder="Enter phone number"
+                maxLength={11}
                 value={formData.phone_number}
-                onChange={(event) =>
-                  setFormData((prev) => ({
-                    ...prev,
-                    phone_number: event.target.value,
-                  }))
-                }
+                onChange={(event) => {
+                  const value = event.target.value.replace(/\D/g, '');
+                  if (value.length <= 11) {
+                    setFormData((prev) => ({
+                      ...prev,
+                      phone_number: value,
+                    }));
+                  }
+                }}
                 disabled={loading}
               />
               {errors.phone_number && (
