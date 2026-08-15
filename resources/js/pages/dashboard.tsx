@@ -4,17 +4,21 @@ import { Input } from '@/components/ui/input';
 import { PlaceholderPattern } from '@/components/ui/placeholder-pattern';
 import { useEffect, useState } from 'react';
 import { dashboard } from '@/routes';
+import { Trash2, Edit2 } from 'lucide-react';
 import {
   getStudentRecords,
   addStudentRecord,
   updateStudentRecord,
   deleteStudentRecord,
+  checkEmailExists,
   type StudentRecord,
 } from '@/lib/firebase-students-service';
 
 export default function Dashboard() {
   const [students, setStudents] = useState<StudentRecord[]>([]);
   const [loading, setLoading] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState('');
   const [formData, setFormData] = useState({
     student_name: '',
     School_email: '',
@@ -68,6 +72,45 @@ export default function Dashboard() {
     return Object.keys(newErrors).length === 0;
   }
 
+  function startEdit(student: StudentRecord) {
+    setEditingId(student.id || null);
+    setFormData({
+      student_name: student.student_name,
+      School_email: student.School_email,
+      phone_number: student.phone_number.toString(),
+      address: student.address,
+      course: student.course,
+      year: student.year,
+    });
+    setErrors({});
+  }
+
+  function cancelEdit() {
+    setEditingId(null);
+    setFormData({
+      student_name: '',
+      School_email: '',
+      phone_number: '',
+      address: '',
+      course: '',
+      year: '',
+    });
+    setErrors({});
+  }
+
+  function getFilteredStudents(): StudentRecord[] {
+    if (!searchQuery.trim()) {
+      return students;
+    }
+
+    const query = searchQuery.toLowerCase();
+    return students.filter(
+      (student) =>
+        student.student_name.toLowerCase().includes(query) ||
+        student.School_email.toLowerCase().includes(query)
+    );
+  }
+
   async function submit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
@@ -79,30 +122,45 @@ export default function Dashboard() {
       setLoading(true);
       const phoneNum = parseInt(formData.phone_number, 10);
 
-      await addStudentRecord({
-        student_name: formData.student_name,
-        School_email: formData.School_email,
-        phone_number: phoneNum,
-        address: formData.address,
-        course: formData.course,
-        year: formData.year,
-      });
+      // Check for duplicate email (excluding current record if editing)
+      const emailExists = await checkEmailExists(formData.School_email, editingId || undefined);
+      if (emailExists) {
+        setErrors({ School_email: 'This email is already in use' });
+        setLoading(false);
+        return;
+      }
 
-      setFormData({
-        student_name: '',
-        School_email: '',
-        phone_number: '',
-        address: '',
-        course: '',
-        year: '',
-      });
+      if (editingId) {
+        // Update existing record
+        await updateStudentRecord(editingId, {
+          student_name: formData.student_name,
+          School_email: formData.School_email,
+          phone_number: phoneNum,
+          address: formData.address,
+          course: formData.course,
+          year: formData.year,
+        });
+      } else {
+        // Create new record
+        await addStudentRecord({
+          student_name: formData.student_name,
+          School_email: formData.School_email,
+          phone_number: phoneNum,
+          address: formData.address,
+          course: formData.course,
+          year: formData.year,
+        });
+      }
+
+      cancelEdit();
       setErrors({});
 
       // Refresh the list
       await fetchStudents();
     } catch (error) {
       console.error('Error saving student record:', error);
-      setErrors({ submit: 'Failed to save student record' });
+      const errorMessage = error instanceof Error ? error.message : 'Failed to save student record';
+      setErrors({ submit: errorMessage });
     } finally {
       setLoading(false);
     }
@@ -129,23 +187,27 @@ export default function Dashboard() {
   return (
     <>
       <Head title="Dashboard" />
-      <div className="flex h-full flex-1 flex-col gap-4 overflow-x-auto rounded-xl p-4">
-        <div>
+      <div className="flex h-full flex-1 gap-4 overflow-auto rounded-xl p-4">
+        {/* Form Section */}
+        <div className="w-1/3 flex-shrink-0">
           <h1 className="text-x1 font-semibold">Students</h1>
           <p className="text-sm text-muted-foreground">Add a Student Record</p>
 
           <form
             onSubmit={submit}
-            className="max-w-x1 space-y-2 rounded-x1 border p-4"
+            className="space-y-2 rounded-x1 border p-4"
           >
+            
             {errors.submit && (
               <p className="text-sm text-red-600">{errors.submit}</p>
+            
             )}
 
             <div className="space-y-2">
               <label htmlFor="student_name">Name</label>
               <Input
                 id="student_name"
+                placeholder="Enter student name"
                 value={formData.student_name}
                 onChange={(event) =>
                   setFormData((prev) => ({
@@ -164,6 +226,7 @@ export default function Dashboard() {
               <label htmlFor="School_email">School Email</label>
               <Input
                 id="School_email"
+                placeholder="Enter school email"
                 value={formData.School_email}
                 onChange={(event) =>
                   setFormData((prev) => ({
@@ -182,6 +245,7 @@ export default function Dashboard() {
               <label htmlFor="phone_number">Phone Number</label>
               <Input
                 id="phone_number"
+                placeholder="Enter phone number"
                 value={formData.phone_number}
                 onChange={(event) =>
                   setFormData((prev) => ({
@@ -200,6 +264,7 @@ export default function Dashboard() {
               <label htmlFor="address">Address</label>
               <Input
                 id="address"
+                placeholder="Enter address"
                 value={formData.address}
                 onChange={(event) =>
                   setFormData((prev) => ({
@@ -218,6 +283,7 @@ export default function Dashboard() {
               <label htmlFor="course">Course</label>
               <Input
                 id="course"
+                placeholder="Enter course"
                 value={formData.course}
                 onChange={(event) =>
                   setFormData((prev) => ({
@@ -236,6 +302,7 @@ export default function Dashboard() {
               <label htmlFor="year">Year</label>
               <Input
                 id="year"
+                placeholder="Enter year"
                 value={formData.year}
                 onChange={(event) =>
                   setFormData((prev) => ({
@@ -251,13 +318,60 @@ export default function Dashboard() {
             </div>
 
             <Button type="submit" disabled={loading}>
-              {loading ? 'Saving...' : 'Save Student Record'}
+              {loading ? 'Saving...' : editingId ? 'Update Student Record' : 'Save Student Record'}
             </Button>
+            {editingId && (
+              <Button type="button" variant="outline" onClick={cancelEdit} disabled={loading}>
+                Cancel
+              </Button>
+            )}
           </form>
+
+          {/* Search Section */}
+          <div className="mt-4 space-y-2">
+            <label htmlFor="search">Search Student</label>
+            <Input
+              id="search"
+              placeholder="Search by name or email..."
+              value={searchQuery}
+              onChange={(event) => setSearchQuery(event.target.value)}
+            />
+          </div>
+
+          {/* Search Results */}
+          {searchQuery && (
+            <div className="mt-2 max-h-40 overflow-y-auto rounded-lg border">
+              {getFilteredStudents().length > 0 ? (
+                <ul className="divide-y">
+                  {getFilteredStudents().map((student) => (
+                    <li
+                      key={student.id}
+                      className="cursor-pointer px-3 py-2 hover:bg-gray-900 transition-colors"
+                      onClick={() => {
+                        startEdit(student);
+                        setSearchQuery('');
+                      }}
+                    >
+                      <div className="text-sm font-medium text-white">
+                        {student.student_name}
+                      </div>
+                      <div className="text-xs text-gray-400">
+                        {student.School_email}
+                      </div>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <div className="px-3 py-2 text-sm text-gray-500">
+                  No students found
+                </div>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Student Records Table */}
-        <div className="mt-8">
+        <div className="flex-1 overflow-x-auto">
           <h2 className="text-lg font-semibold">Student Records</h2>
           {loading && <p className="text-sm text-gray-500">Loading...</p>}
           {!loading && students.length === 0 && (
@@ -295,29 +409,39 @@ export default function Dashboard() {
                   {students.map((student) => (
                     <tr
                       key={student.id}
-                      className="border-b hover:bg-gray-50"
+                      className="border-b hover:bg-gray-900 cursor-pointer transition-colors"
                     >
-                      <td className="px-4 py-2 text-sm">
+                      <td className="px-4 py-2 text-sm text-white">
                         {student.student_name}
                       </td>
-                      <td className="px-4 py-2 text-sm">
+                      <td className="px-4 py-2 text-sm text-white">
                         {student.School_email}
                       </td>
-                      <td className="px-4 py-2 text-sm">
+                      <td className="px-4 py-2 text-sm text-white">
                         {student.phone_number}
                       </td>
-                      <td className="px-4 py-2 text-sm">{student.address}</td>
-                      <td className="px-4 py-2 text-sm">{student.course}</td>
-                      <td className="px-4 py-2 text-sm">{student.year}</td>
+                      <td className="px-4 py-2 text-sm text-white">{student.address}</td>
+                      <td className="px-4 py-2 text-sm text-white">{student.course}</td>
+                      <td className="px-4 py-2 text-sm text-white">{student.year}</td>
                       <td className="px-4 py-2 text-sm">
-                        <Button
-                          variant="destructive"
-                          size="sm"
-                          onClick={() => handleDelete(student.id)}
-                          disabled={loading}
-                        >
-                          Delete
-                        </Button>
+                        <div className="flex gap-2">
+                          <Button
+                            variant="outline"
+                            size="sm"
+                            onClick={() => startEdit(student)}
+                            disabled={loading}
+                          >
+                            <Edit2 className="h-4 w-4" />
+                          </Button>
+                          <Button
+                            variant="destructive"
+                            size="sm"
+                            onClick={() => handleDelete(student.id)}
+                            disabled={loading}
+                          >
+                            <Trash2 className="h-4 w-4" />
+                          </Button>
+                        </div>
                       </td>
                     </tr>
                   ))}

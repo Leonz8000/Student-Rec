@@ -7,6 +7,7 @@ import {
   getDocs,
   query,
   orderBy,
+  where,
   QueryConstraint,
 } from 'firebase/firestore';
 import { db } from './firebase-config';
@@ -30,17 +31,54 @@ const COLLECTION_NAME = 'students_recs';
  */
 export async function getStudentRecords(): Promise<StudentRecord[]> {
   try {
-    const constraints: QueryConstraint[] = [orderBy('createdAt', 'desc')];
-    const q = query(collection(db, COLLECTION_NAME), ...constraints);
+    const q = query(collection(db, COLLECTION_NAME), orderBy('createdAt', 'desc'));
     const querySnapshot = await getDocs(q);
 
-    return querySnapshot.docs.map((doc) => ({
-      id: doc.id,
-      ...doc.data(),
-    } as StudentRecord));
+    return querySnapshot.docs.map((doc) => {
+      const data = doc.data();
+      return {
+        id: doc.id,
+        student_name: data.student_name || '',
+        School_email: data.School_email || '',
+        phone_number: data.phone_number || 0,
+        address: data.address || '',
+        course: data.course || '',
+        year: data.year || '',
+        createdAt: data.createdAt?.toDate?.() || new Date(),
+        updatedAt: data.updatedAt?.toDate?.() || new Date(),
+      } as StudentRecord;
+    });
   } catch (error) {
     console.error('Error fetching student records:', error);
-    throw error;
+    // Return empty array on error instead of throwing
+    return [];
+  }
+}
+
+/**
+ * Check if an email already exists (excluding a specific document ID)
+ */
+export async function checkEmailExists(email: string, excludeId?: string): Promise<boolean> {
+  try {
+    const q = query(
+      collection(db, COLLECTION_NAME),
+      where('School_email', '==', email.toLowerCase())
+    );
+    const querySnapshot = await getDocs(q);
+
+    if (querySnapshot.empty) {
+      return false;
+    }
+
+    // If excludeId is provided, check if any other documents have this email
+    if (excludeId) {
+      return querySnapshot.docs.some((doc) => doc.id !== excludeId);
+    }
+
+    return true;
+  } catch (error) {
+    console.error('Error checking email:', error);
+    return false;
   }
 }
 
